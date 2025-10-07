@@ -30,4 +30,6 @@ jobs:
           black --check src tests
 
       - name: Tests
-        run: pytest
+        env:
+          PYTHONPATH: src
+        run: python -m pytest
