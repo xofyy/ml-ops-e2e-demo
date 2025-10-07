@@ -1,0 +1,54 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE / tooling
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Data & model artifacts
+data/raw/
+data/processed/
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+mlruns/
+.cache/
+.cache/**
+logs/
+
+# Hugging Face / token files
+token
+*.jsonl cache
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Docker / compose outputs
+*.log
+
+# Prefect / orchestration state
+.prefect/
+
+# Local testing artifacts
+coverage/
+htmlcov/

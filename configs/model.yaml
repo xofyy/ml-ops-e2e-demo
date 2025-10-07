@@ -1,0 +1,19 @@
+# Model and feature configuration.
+features:
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  include_table_metrics: true
+  numeric_aggregations: ["mean", "std", "max", "min", "sum"]
+
+training:
+  val_size: 0.2
+  seed: 42
+  params:
+    n_estimators: 500
+    learning_rate: 0.05
+    max_depth: -1
+    subsample: 0.9
+    colsample_bytree: 0.8
+
+mlflow:
+  experiment_name: "finance-math-demo"
+  tracking_uri: "file:./mlruns"
