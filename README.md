@@ -1,15 +1,15 @@
 # FinanceMath MLOps Demo
 
-FinanceMath MLOps Demo is a lightweight, end-to-end pipeline that ingests the [FinanceMath](https://huggingface.co/datasets/yale-nlp/FinanceMath) dataset, engineers features, trains a regression model, evaluates it, and exposes an inference service. The repository highlights reproducible experimentation, orchestration, CI/CD, and monitoring practices.
+FinanceMath MLOps Demo is a lightweight, end-to-end pipeline built around the [FinanceMath](https://huggingface.co/datasets/yale-nlp/FinanceMath) dataset. It covers data ingestion, feature engineering, model training/evaluation, inference serving, orchestration, and monitoring in a reproducible manner.
 
 ## Features
-- **Ingestion**: Download the Hugging Face validation split, normalise markdown tables, validate each record with Pydantic, and persist JSONL artefacts.
-- **Feature engineering**: Combine sentence embeddings with numeric table aggregates and metadata features.
-- **Training & tracking**: Fit a LightGBM regressor and capture metrics / artefacts via MLflow.
-- **Evaluation**: Reuse the feature set to compute MAE / RMSE and store JSON reports.
-- **Serving**: FastAPI service loads the latest MLflow model and exposes Prometheus-compatible metrics.
-- **Orchestration**: Prefect flow stitches ingestion -> features -> training -> evaluation.
-- **Monitoring**: Evidently script scaffold for drift / performance dashboards.
+- **Ingestion** ñ Download the validation split from Hugging Face, parse markdown tables, validate each record with Pydantic, and persist JSONL artefacts.
+- **Feature engineering** ñ Generate sentence embeddings, numeric aggregates from tables, and metadata features stored in Parquet.
+- **Training & tracking** ñ Train a LightGBM regressor while logging metrics and artefacts to MLflow.
+- **Evaluation** ñ Reuse the feature set to compute MAE/RMSE and store a JSON report.
+- **Serving** ñ FastAPI service loads the latest MLflow model and exposes Prometheus metrics.
+- **Orchestration** ñ Prefect flow connects ingestion õ features õ train õ evaluate; deployments are available in Prefect Cloud and CI.
+- **Monitoring** ñ Evidently-based drift report, Prometheus + Grafana dashboards, Docker Compose stack.
 
 ## Quick Start
 ```bash
@@ -17,15 +17,14 @@ FinanceMath MLOps Demo is a lightweight, end-to-end pipeline that ingests the [F
 conda create -n finance-math python=3.10
 conda activate finance-math
 
-# Authenticate with Hugging Face if the dataset requires gated access
+# Authenticate with Hugging Face if the dataset is gated
 huggingface-cli login  # or export HUGGINGFACE_TOKEN=<your-token>
 
-# Install project and dev dependencies
+# Install project dependencies
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
-# Update configs/inference.yaml to point to your trained model,
-#   e.g. set model.model_uri: "runs:/<run_id>/model" or register the model.
+# Update configs/inference.yaml to point to your trained model (e.g. model.model_uri: "runs:/<run_id>/model")
 
 # Run the pipeline end to end
 python -m src.data.ingest
@@ -33,18 +32,8 @@ python -m src.features.build_features
 RUN_ID=$(python -m src.models.train)
 python -m src.models.evaluate --run-id "$RUN_ID"
 uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
-# Metrics endpoint (Prometheus format)
+# Metrics endpoint
 curl http://localhost:8000/metrics
-```
-
-Alternatively, Make targets wrap the same commands:
-```bash
-make data
-make features
-RUN_ID=$(make -s train)
-make evaluate RUN_ID=$RUN_ID
-# Update configs/inference.yaml with RUN_ID before serving
-make serve
 ```
 
 ## Make Targets
@@ -59,30 +48,30 @@ make serve
 | `make prefect-flow` | Execute Prefect flow locally. |
 | `make lint` / `make lint-fix` | Static analysis with Ruff & Black. |
 | `make test` | Run unit tests. |
-| `make drift-report MODEL_URI=runs:/<run_id>/model` | Generate Evidently HTML drift report (computes predictions via MLflow). |
-| `make compose-up` / `make compose-down` | Bring up or tear down the Docker Compose stack (inference + Prometheus + Grafana). |
+| `make drift-report MODEL_URI=runs:/<run_id>/model` | Generate Evidently HTML drift report. |
+| `make compose-up` / `make compose-down` | Bring up or tear down Docker Compose stack (inference + Prometheus + Grafana). |
 | `SKIP_MODEL_LOAD=1 pytest` | Skip model loading during tests (FastAPI metrics tests). |
 
 ## Repository Layout
 ```
 .
-‚îú‚îÄ‚îÄ configs/              # YAML configs for data, training, inference.
-‚îú‚îÄ‚îÄ data/                 # Data artefacts (tracked via DVC).
-‚îú‚îÄ‚îÄ docker/               # Dockerfiles and compose stack for serving / monitoring.
-‚îú‚îÄ‚îÄ docs/                 # Architecture notes and notebooks.
-‚îú‚îÄ‚îÄ scripts/              # Utility scripts (e.g. Evidently report).
-‚îú‚îÄ‚îÄ src/
-‚îÇ   ‚îú‚îÄ‚îÄ common/           # Shared config loaders and schemas.
-‚îÇ   ‚îú‚îÄ‚îÄ data/             # Ingestion logic & validators.
-‚îÇ   ‚îú‚îÄ‚îÄ features/         # Feature engineering pipeline.
-‚îÇ   ‚îú‚îÄ‚îÄ models/           # Training and evaluation.
-‚îÇ   ‚îú‚îÄ‚îÄ serving/          # FastAPI app and predictor wrapper.
-‚îÇ   ‚îî‚îÄ‚îÄ workflows/        # Prefect orchestration.
-‚îî‚îÄ‚îÄ tests/                # Pytest unit tests.
++¶¶ configs/              # YAML configs for data, training, inference.
++¶¶ data/                 # Data artefacts (tracked via DVC).
++¶¶ docker/               # Dockerfiles and compose stack for serving / monitoring.
++¶¶ docs/                 # Architecture notes and notebooks.
++¶¶ scripts/              # Utility scripts (e.g. Evidently report).
++¶¶ src/
+-   +¶¶ common/           # Shared config loaders and schemas.
+-   +¶¶ data/             # Ingestion logic & validators.
+-   +¶¶ features/         # Feature engineering pipeline.
+-   +¶¶ models/           # Training and evaluation.
+-   +¶¶ serving/          # FastAPI app and predictor wrapper.
+-   L¶¶ workflows/        # Prefect orchestration.
+L¶¶ tests/                # Pytest unit tests.
 ```
 
 ## Data Validation & Versioning
-- Ingestion validates each record against `src/data/validators.py`; invalid rows are logged and skipped.
+- Ingestion stage validates each JSONL record using `src/data/validators.py`; invalid rows are logged and skipped.
 - Track data snapshots with DVC:
   ```bash
   dvc init
@@ -91,23 +80,28 @@ make serve
   git add data/raw.dvc data/processed.dvc .dvc/config
   dvc push
   ```
-  Log `.dvc` hashes or `dvc status -c` output to MLflow runs for data-model traceability. Other machines can run `dvc pull` to restore the same snapshot.
+  Log `.dvc` hashes or `dvc status -c` output to MLflow runs for data/model traceability. Use `dvc pull` on other machines to restore the same snapshot.
 
 ## Docker Compose
-Run the inference service together with Prometheus and Grafana:
+Launch inference, Prometheus, and Grafana together:
 ```bash
 cd docker
 docker compose up --build
 ```
-- Inference: `http://localhost:8000` (metrics at `/metrics`).
+- Inference service: `http://localhost:8000` (metrics at `/metrics`).
 - Prometheus: `http://localhost:9090`.
-- Grafana: `http://localhost:3000` (default credentials `admin` / `admin`), with the ‚ÄúFinanceMath Inference Overview‚Äù dashboard showing request counts, latency (p95), and prediction totals.
+- Grafana: `http://localhost:3000` (default credentials `admin` / `admin`), with the ìFinanceMath Inference Overviewî dashboard showing request counts, latency (p95), and prediction totals.
+
+## Prefect CI Trigger
+- Manual run via GitHub Actions: `Actions ? prefect-run ? Run workflow`.
+- Define `PREFECT_API_KEY` and `PREFECT_WORKSPACE` (e.g. `account_id/workspace_id`) as repository secrets so the workflow can log into Prefect Cloud and trigger the `finance-math-mlops/finance-math-demo` deployment.
 
 ## CI/CD
-The GitHub Actions workflow (`.github/workflows/mlops-demo.yml`) installs dependencies, runs linting, executes pytest with model loading disabled, and builds the inference Docker image. Extend it with additional jobs (e.g. drift reporting, Prefect deployment triggers, Docker push) as needed.
+- `.github/workflows/mlops-demo.yml` installs dependencies (`requirements-ci.txt`), runs lint/test, builds the inference Docker image, and optionally generates a drift report (skipped if the Parquet features are absent).
+- `.github/workflows/prefect-run.yml` manually triggers a Prefect deployment run (requires Prefect Cloud credentials).
 
 ## Next Steps
-- Schedule Prefect deployments or trigger them from GitHub Actions.
+- Schedule Prefect deployments or trigger them automatically from GitHub Actions.
 - Point MLflow tracking to a shared backend (PostgreSQL, Databricks, etc.).
 - Improve model performance via hyperparameter search or alternative algorithms.
-- Integrate Prometheus metrics with Grafana alerts or third-party monitoring solutions.
+- Integrate Prometheus metrics with Grafana alerts / third-party monitoring.
