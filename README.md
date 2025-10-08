@@ -7,8 +7,8 @@ FinanceMath MLOps Demo is a lightweight, end-to-end pipeline that ingests the [F
 - **Feature engineering**: Blend sentence embeddings with numeric table aggregates and metadata features.
 - **Training & tracking**: Fit a LightGBM regressor and capture metrics/artefacts via MLflow.
 - **Evaluation**: Reuse the feature set to compute MAE/RMSE and store JSON reports.
-- **Serving**: Provide a FastAPI service that loads the latest MLflow model.
-- **Orchestration**: Prefect flow stitches ingestion -> features -> training -> evaluation.
+- **Serving**: Provide a FastAPI service that loads the latest MLflow model and exposes Prometheus-compatible metrics.
+- **Orchestration**: Prefect flow stitches ingestion → features → training → evaluation.
 - **Monitoring**: Evidently script scaffold for drift/performance dashboards.
 
 ## Quick Start
@@ -33,6 +33,8 @@ python -m src.features.build_features
 RUN_ID=$(python -m src.models.train)
 python -m src.models.evaluate --run-id "$RUN_ID"
 uvicorn src.serving.app:app --host 0.0.0.0 --port 8000
+# Metrics endpoint (Prometheus format)
+curl http://localhost:8000/metrics
 ```
 
 Alternatively, Make targets wrap the same commands:
@@ -58,18 +60,19 @@ make serve
 | `make lint` / `make lint-fix` | Static analysis with Ruff & Black. |
 | `make test` | Run unit tests. |
 | `make drift-report MODEL_URI=runs:/<run_id>/model` | Generate Evidently HTML drift report (computes predictions via MLflow). |
+| `SKIP_MODEL_LOAD=1 pytest` | Skip model loading during tests (FastAPI metrics tests). |
 
 ## Repository Layout
 ```
 .
 ├── configs/              # YAML configs for data, training, inference.
-├── data/                 # Data artefacts (consider DVC or Git LFS).
-├── docker/               # Dockerfiles for serving.
+├── data/                 # Data artefacts (tracked via DVC).
+├── docker/               # Dockerfiles and compose stack for serving/monitoring.
 ├── docs/                 # Architecture notes and notebooks.
 ├── scripts/              # Utility scripts (e.g. Evidently report).
 ├── src/
 │   ├── common/           # Shared config loaders and schemas.
-│   ├── data/             # Ingestion logic.
+│   ├── data/             # Ingestion logic & validators.
 │   ├── features/         # Feature engineering pipeline.
 │   ├── models/           # Training and evaluation.
 │   ├── serving/          # FastAPI app and predictor wrapper.
@@ -79,20 +82,30 @@ make serve
 
 ## Data Validation & Versioning
 - İndirme adımı, her kaydı `src/data/validators.py` altındaki Pydantic şemasıyla doğrular; hatalı kayıtlar log’a yazılıp atlanır.
-- Veri versiyonlamak için isteğe bağlı olarak DVC ekleyebilirsin:
+- DVC ile veri versiyonlamak için:
   ```bash
   dvc init
-  dvc remote add -d storage s3://<bucket>/finance-math
+  dvc remote add -d storage gs://<bucket>/finance-math
   dvc add data/raw data/processed
   git add data/raw.dvc data/processed.dvc .dvc/config
+  dvc push
   ```
-  Böylece MLflow run’larında `dvc metrics` veya hash bilgilerini loglayarak veri ile model arasında izlenebilirlik sağlayabilirsin.
+  Böylece MLflow run’larında `.dvc` hash’lerini loglayarak veri-model izlenebilirliği sağlarsın; başka bir makinede `dvc pull` ile aynı veriyi indirirsin.
+
+## Docker Compose
+Yerelde inference servisini ve Prometheus metrik toplamayı birlikte çalıştırmak için:
+```bash
+cd docker
+docker compose up --build
+```
+- Inference servisi `http://localhost:8000` adresinde, Prometheus metrikleri `/metrics` altında erişilebilir.
+- Prometheus arayüzü `http://localhost:9090`, Grafana ise `http://localhost:3000` (varsayılan kullanıcı/parola `admin`/`admin`). Grafana’daki “FinanceMath Inference Overview” dashboard’u request sayısı, latency (p95) ve prediction sayısını gösterir.
 
 ## CI/CD
-The GitHub Actions workflow (`.github/workflows/mlops-demo.yml`) installs dependencies with pip, runs lint checks, and executes pytest for every push or pull request. Extend it with build/deploy jobs as automation needs grow.
+The GitHub Actions workflow (`.github/workflows/mlops-demo.yml`) installs dependencies with pip, runs lint checks, executes pytest (model yüklemeden), ve Docker imajının inşasını doğrular. Gerekirse ek job’larla drift raporu, Prefect deployment tetikleme veya image push işlemlerini ekleyebilirsin.
 
 ## Next Steps
-- Wire Prefect deployments or GitHub Actions to trigger training on merge.
-- Connect MLflow to a remote backend (e.g. SQLite, PostgreSQL, Databricks).
-- Replace LightGBM with a retrieval + reasoning chain or LLM if desired.
-- Expand monitoring to run Evidently on a schedule and push metrics to Grafana.
+- Prefect deployment’larını schedule edip GitHub Actions üzerinden tetiklemek.
+- MLflow tracking URI’sini uzak bir backend (PostgreSQL, Databricks vb.) ile paylaşmak.
+- Modeli geliştirmek için hiperparametre araması veya farklı algoritmalar denemek.
+- Prometheus metriğini Grafana veya Alertmanager ile entegre edip uyarı sistemi kurmak.

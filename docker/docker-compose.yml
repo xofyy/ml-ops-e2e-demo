@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  inference:
+    build:
+      context: ..
+      dockerfile: docker/inference.Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONPATH: /app
+    depends_on: []
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - inference
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/default.yaml
+      - ./grafana/dashboards:/etc/grafana/dashboards
+    depends_on:
+      - prometheus

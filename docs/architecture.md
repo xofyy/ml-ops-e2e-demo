@@ -20,6 +20,7 @@ The FinanceMath MLOps demo implements an end-to-end learning pipeline with the f
 5. **Serving**
    - FastAPI app loads either a registered model stage or a run-specific URI from MLflow.
    - Predictor regenerates feature vector using the same embedding/model config.
+   - Prometheus counters/histograms capture request and latency metrics; `/metrics` endpoint exposes them.
 6. **Orchestration**
    - Prefect flow orchestrates ingestion -> features -> training -> evaluation.
    - Command-line entrypoints exposed through `python -m`.
@@ -29,6 +30,7 @@ The FinanceMath MLOps demo implements an end-to-end learning pipeline with the f
 
 ## Deployment Options
 - **Local development**: `uvicorn src.serving.app:app` with MLflow file store.
+- **Docker compose**: `docker/docker-compose.yml` spins up the inference API and Prometheus for local monitoring.
 - **Containerised inference**: Build `docker/inference.Dockerfile` and deploy to Docker/Kubernetes.
 - **CI/CD**: GitHub Actions workflow ensures linting and tests on each commit.
 - **Scheduling**: Convert Prefect flow into a deployment for periodic re-training.
