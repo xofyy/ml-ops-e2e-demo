@@ -63,14 +63,22 @@ jobs:
           pip install -r requirements.txt
 
       - name: Generate drift report
+        id: drift
         env:
           MLFLOW_TRACKING_URI: file:./mlruns
         run: |
-          python scripts/generate_drift_report.py \
-            --model-uri runs:/5d230e940f6749b4af7ad9783d673be4/model \
-            --output data/processed/evidently_report.html
+          if [ -f data/processed/finance_math_features.parquet ]; then
+            python scripts/generate_drift_report.py \
+              --model-uri runs:/5d230e940f6749b4af7ad9783d673be4/model \
+              --output data/processed/evidently_report.html
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping drift report generation; data/processed/finance_math_features.parquet not found."
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload drift report
+        if: steps.drift.outputs.generated == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: evidently-report
