@@ -3,7 +3,7 @@
 FinanceMath MLOps Demo is a lightweight, end-to-end pipeline that ingests the [FinanceMath](https://huggingface.co/datasets/yale-nlp/FinanceMath) dataset, engineers features, trains a regression model, evaluates it, and exposes an inference service. The repository demonstrates reproducible workflows, orchestration, CI/CD, and monitoring practices in an approachable learning setting.
 
 ## Features
-- **Ingestion**: Download the Hugging Face validation split, normalise markdown tables, and persist JSONL artefacts.
+- **Ingestion**: Download the Hugging Face validation split, normalise markdown tables, validate each record with Pydantic, and persist JSONL artefacts.
 - **Feature engineering**: Blend sentence embeddings with numeric table aggregates and metadata features.
 - **Training & tracking**: Fit a LightGBM regressor and capture metrics/artefacts via MLflow.
 - **Evaluation**: Reuse the feature set to compute MAE/RMSE and store JSON reports.
@@ -76,6 +76,17 @@ make serve
 │   └── workflows/        # Prefect orchestration.
 └── tests/                # Pytest unit tests.
 ```
+
+## Data Validation & Versioning
+- İndirme adımı, her kaydı `src/data/validators.py` altındaki Pydantic şemasıyla doğrular; hatalı kayıtlar log’a yazılıp atlanır.
+- Veri versiyonlamak için isteğe bağlı olarak DVC ekleyebilirsin:
+  ```bash
+  dvc init
+  dvc remote add -d storage s3://<bucket>/finance-math
+  dvc add data/raw data/processed
+  git add data/raw.dvc data/processed.dvc .dvc/config
+  ```
+  Böylece MLflow run’larında `dvc metrics` veya hash bilgilerini loglayarak veri ile model arasında izlenebilirlik sağlayabilirsin.
 
 ## CI/CD
 The GitHub Actions workflow (`.github/workflows/mlops-demo.yml`) installs dependencies with pip, runs lint checks, and executes pytest for every push or pull request. Extend it with build/deploy jobs as automation needs grow.

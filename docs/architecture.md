@@ -6,6 +6,7 @@ The FinanceMath MLOps demo implements an end-to-end learning pipeline with the f
    - Source: Hugging Face dataset `yale-nlp/FinanceMath` (validation split).
    - Output: JSONL file with parsed markdown tables and metadata.
    - Authentication: supports gated datasets via `use_auth_token` (config) and `huggingface-cli login`.
+   - Validation: each record is validated against a Pydantic schema; invalid rows are logged and skipped.
 2. **Feature engineering**
    - Text embeddings via `sentence-transformers/all-MiniLM-L6-v2`.
    - Numeric table aggregations (mean, std, min, max, sum) and metadata features.

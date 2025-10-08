@@ -9,6 +9,7 @@ from src.common.config import load_config
 from src.common.schemas import DatasetSettings
 from src.utils.logging import configure_logging
 from src.utils.table_parser import table_to_records
+from src.data.validators import safe_validate
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,15 +55,32 @@ def ingest_dataset(config_path: Path | str = "configs/dataset.yaml") -> Path:
 
     written = 0
 
+    invalid_records: list[tuple[int, str]] = []
+
     with output_path.open("w", encoding="utf-8") as handle:
         for index, example in enumerate(hf_dataset):  # type: ignore[arg-type]
             if limit is not None and index >= limit:
                 break
             record = prepare_record(example)
+            is_valid, _, error = safe_validate(record)
+            if not is_valid:
+                invalid_records.append((index, error or "Unknown validation error"))
+                continue
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
             written += 1
 
     LOGGER.info("Ingestion complete. Total records written: %s", written)
+    if invalid_records:
+        LOGGER.warning(
+            "Skipped %s invalid records during ingestion.", len(invalid_records)
+        )
+        for idx, err in invalid_records[:5]:
+            LOGGER.debug("Invalid record index=%s error=%s", idx, err)
+        if len(invalid_records) > 5:
+            LOGGER.debug(
+                "Additional %s invalid records omitted from log.",
+                len(invalid_records) - 5,
+            )
     return output_path
 
 
