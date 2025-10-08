@@ -40,3 +40,9 @@ def safe_validate(
         return True, model, None
     except ValidationError as exc:
         return False, None, exc.json()
+
+
+def serialise_validation_error(error: Optional[str]) -> str:
+    if error and error.strip():
+        return error
+    return "Unknown validation error"

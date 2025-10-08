@@ -1,4 +1,4 @@
-.PHONY: install data features train evaluate serve prefect-flow lint lint-fix test drift-report compose-up compose-down
+.PHONY: install data features train evaluate serve prefect-flow lint lint-fix test test-integration drift-report compose-up compose-down
 
 install:
 	pip install -r requirements.txt
@@ -35,6 +35,9 @@ lint-fix:
 
 test:
 	python -m pytest
+
+test-integration:
+	python -m pytest -m integration
 
 drift-report:
 ifdef MODEL_URI

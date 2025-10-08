@@ -3,13 +3,13 @@
 FinanceMath MLOps Demo is a lightweight, end-to-end pipeline built around the [FinanceMath](https://huggingface.co/datasets/yale-nlp/FinanceMath) dataset. It covers data ingestion, feature engineering, model training/evaluation, inference serving, orchestration, and monitoring in a reproducible manner.
 
 ## Features
-- **Ingestion** – Download the validation split from Hugging Face, parse markdown tables, validate each record with Pydantic, and persist JSONL artefacts.
-- **Feature engineering** – Generate sentence embeddings, numeric aggregates from tables, and metadata features stored in Parquet.
-- **Training & tracking** – Train a LightGBM regressor while logging metrics and artefacts to MLflow.
-- **Evaluation** – Reuse the feature set to compute MAE/RMSE and store a JSON report.
-- **Serving** – FastAPI service loads the latest MLflow model and exposes Prometheus metrics.
-- **Orchestration** – Prefect flow connects ingestion › features › train › evaluate; deployments are available in Prefect Cloud and CI.
-- **Monitoring** – Evidently-based drift report, Prometheus + Grafana dashboards, Docker Compose stack.
+- **Ingestion** â€“ Download the validation split from Hugging Face, parse markdown tables, validate each record with Pydantic, and persist JSONL artefacts.
+- **Feature engineering** â€“ Generate sentence embeddings, numeric aggregates from tables, and metadata features stored in Parquet.
+- **Training & tracking** â€“ Train a LightGBM regressor while logging metrics and artefacts to MLflow.
+- **Evaluation** â€“ Reuse the feature set to compute MAE/RMSE and store a JSON report.
+- **Serving** â€“ FastAPI service loads the latest MLflow model and exposes Prometheus metrics.
+- **Orchestration** â€“ Prefect flow connects ingestion â€º features â€º train â€º evaluate; deployments are available in Prefect Cloud and CI.
+- **Monitoring** â€“ Evidently-based drift report, Prometheus + Grafana dashboards, Docker Compose stack.
 
 ## Quick Start
 ```bash
@@ -17,7 +17,7 @@ FinanceMath MLOps Demo is a lightweight, end-to-end pipeline built around the [F
 conda create -n finance-math python=3.10
 conda activate finance-math
 
-# Authenticate with Hugging Face if the dataset is gated
+# Authenticate with Hugging Face if the dataset is gated (config reads HUGGINGFACE_TOKEN from env)
 huggingface-cli login  # or export HUGGINGFACE_TOKEN=<your-token>
 
 # Install project dependencies
@@ -48,6 +48,7 @@ curl http://localhost:8000/metrics
 | `make prefect-flow` | Execute Prefect flow locally. |
 | `make lint` / `make lint-fix` | Static analysis with Ruff & Black. |
 | `make test` | Run unit tests. |
+| `make test-integration` | Run integration test suite (`pytest -m integration`). |
 | `make drift-report MODEL_URI=runs:/<run_id>/model` | Generate Evidently HTML drift report. |
 | `make compose-up` / `make compose-down` | Bring up or tear down Docker Compose stack (inference + Prometheus + Grafana). |
 | `SKIP_MODEL_LOAD=1 pytest` | Skip model loading during tests (FastAPI metrics tests). |
@@ -55,20 +56,22 @@ curl http://localhost:8000/metrics
 ## Repository Layout
 ```
 .
-+¦¦ configs/              # YAML configs for data, training, inference.
-+¦¦ data/                 # Data artefacts (tracked via DVC).
-+¦¦ docker/               # Dockerfiles and compose stack for serving / monitoring.
-+¦¦ docs/                 # Architecture notes and notebooks.
-+¦¦ scripts/              # Utility scripts (e.g. Evidently report).
-+¦¦ src/
--   +¦¦ common/           # Shared config loaders and schemas.
--   +¦¦ data/             # Ingestion logic & validators.
--   +¦¦ features/         # Feature engineering pipeline.
--   +¦¦ models/           # Training and evaluation.
--   +¦¦ serving/          # FastAPI app and predictor wrapper.
--   L¦¦ workflows/        # Prefect orchestration.
-L¦¦ tests/                # Pytest unit tests.
++Â¦Â¦ configs/              # YAML configs for data, training, inference.
++Â¦Â¦ data/                 # Data artefacts (tracked via DVC).
++Â¦Â¦ docker/               # Dockerfiles and compose stack for serving / monitoring.
++Â¦Â¦ docs/                 # Architecture notes and notebooks.
++Â¦Â¦ scripts/              # Utility scripts (e.g. Evidently report).
++Â¦Â¦ src/
+-   +Â¦Â¦ common/           # Shared config loaders and schemas.
+-   +Â¦Â¦ data/             # Ingestion logic & validators.
+-   +Â¦Â¦ features/         # Feature engineering pipeline.
+-   +Â¦Â¦ models/           # Training and evaluation.
+-   +Â¦Â¦ serving/          # FastAPI app and predictor wrapper.
+-   LÂ¦Â¦ workflows/        # Prefect orchestration.
+LÂ¦Â¦ tests/                # Pytest unit tests.
 ```
+
+Refer to `docs/architecture.md` for the end-to-end flow diagram and component hand-off notes.
 
 ## Data Validation & Versioning
 - Ingestion stage validates each JSONL record using `src/data/validators.py`; invalid rows are logged and skipped.
@@ -90,7 +93,21 @@ docker compose up --build
 ```
 - Inference service: `http://localhost:8000` (metrics at `/metrics`).
 - Prometheus: `http://localhost:9090`.
-- Grafana: `http://localhost:3000` (default credentials `admin` / `admin`), with the “FinanceMath Inference Overview” dashboard showing request counts, latency (p95), and prediction totals.
+- Grafana: `http://localhost:3000` (default credentials `admin` / `admin`), with the "FinanceMath Inference Overview" dashboard showing request counts, latency (p95), and prediction totals.
+- `docker compose --profile monitoring up` starts only the inference and monitoring stack, using service labels to hint Prometheus scrapes and relying on container health checks.
+
+## Observability and Tracing
+- Each HTTP response now includes an `X-Request-ID` header and `/predict` echoes the same value in its JSON payload. Pass your own header to correlate logs, metrics, and client traces.
+- Prometheus histograms expose latency buckets while summaries approximate p50/p90/p99 latencies; scrape metadata is published through Docker service labels.
+- Invalid ingestion records are persisted to `data/raw/finance_math_invalid.jsonl` and the training step uploads the file under `data_quality/` in MLflow.
+
+## Experiment Tracking
+- Feature engineering stores the PCA reducer at `data/processed/embedding_pca.joblib`, which is logged with the related MLflow run under `preprocessing/`.
+- Feature column manifests now ship with a `version` marker (see `feature_version` in `configs/model.yaml`); the serving predictor enforces the same layout at inference time.
+- Visualise recent runs locally:
+  ```bash
+  mlflow ui --backend-store-uri mlruns
+  ```
 
 ## Prefect CI Trigger
 - Manual run via GitHub Actions: `Actions ? prefect-run ? Run workflow`.

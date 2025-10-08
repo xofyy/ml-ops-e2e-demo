@@ -9,14 +9,35 @@ services:
       - "8000:8000"
     environment:
       PYTHONPATH: /app
+    labels:
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/port=8000"
+      - "prometheus.io/path=/metrics"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on: []
 
   prometheus:
     image: prom/prometheus:v2.53.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090:9090"
+    profiles:
+      - monitoring
     depends_on:
       - inference
 
@@ -31,5 +52,7 @@ services:
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
       - ./grafana/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/default.yaml
       - ./grafana/dashboards:/etc/grafana/dashboards
+    profiles:
+      - monitoring
     depends_on:
       - prometheus

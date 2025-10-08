@@ -3,7 +3,7 @@ dataset:
   name: "yale-nlp/FinanceMath"
   split: "validation"
   cache_dir: "./.cache/hf"
-  use_auth_token: true
+  use_auth_token: null
 
 paths:
   raw: "data/raw"
@@ -12,3 +12,4 @@ paths:
 ingest:
   output_filename: "finance_math_validation.jsonl"
   max_examples: null  # Optional limit for quick experiments.
+  invalid_output_filename: "finance_math_invalid.jsonl"

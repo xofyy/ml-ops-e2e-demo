@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import mlflow
 import pandas as pd
 from mlflow import artifacts
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
+import joblib
 
 from src.common.config import load_config
 from src.common.schemas import FeatureSettings, InferenceSettings
@@ -46,14 +47,29 @@ class Predictor:
                 )
             model_uri = f"models:/{model_cfg.model_name}/{model_cfg.model_stage}"
 
+        self.model_uri = model_uri
         LOGGER.info("Loading model from %s", model_uri)
         self.model = mlflow.pyfunc.load_model(model_uri)
+        self.run_id: Optional[str] = getattr(self.model.metadata, "run_id", None)
 
-        feature_columns_uri = self._resolve_feature_columns_uri(model_uri)
+        feature_columns_uri = self._resolve_feature_columns_uri()
         metadata = artifacts.load_dict(feature_columns_uri)
         self.feature_columns: list[str] = metadata["feature_columns"]
+        self.feature_version: Optional[str] = metadata.get("version")
+        self.embedding_columns = [
+            column for column in self.feature_columns if column.startswith("emb")
+        ]
 
-        self.embedder = SentenceTransformer(feature_cfg.features.embedding_model)
+        self.embedding_reducer = self._load_embedding_reducer()
+
+        embedder_kwargs: dict[str, object] = {}
+        cache_dir = feature_cfg.features.embedding_cache_dir
+        if cache_dir:
+            embedder_kwargs["cache_folder"] = cache_dir
+        self.embedder = SentenceTransformer(
+            feature_cfg.features.embedding_model, **embedder_kwargs
+        )
+
 
     def build_feature_vector(self, request: FinanceMathRequest) -> pd.DataFrame:
         tables_structured = [table_to_records(tbl) for tbl in request.tables_markdown]
@@ -61,10 +77,17 @@ class Predictor:
             tables_structured, self.feature_cfg.features.numeric_aggregations
         )
 
-        embedding = self.embedder.encode([request.question], show_progress_bar=False)[0]
-        feature_dict: dict[str, Any] = {
-            f"emb_{idx:03d}": float(value) for idx, value in enumerate(embedding)
-        }
+        embedding_array = self.embedder.encode(
+            [request.question], show_progress_bar=False
+        )[0]
+        if self.embedding_reducer is not None:
+            embedding_array = self.embedding_reducer.transform(
+                [embedding_array]
+            )[0]
+        feature_dict: dict[str, Any] = {}
+        for idx, column in enumerate(self.embedding_columns):
+            if idx < len(embedding_array):
+                feature_dict[column] = float(embedding_array[idx])
         feature_dict.update(agg_features)
 
         topic = request.topic or "unknown"
@@ -83,12 +106,34 @@ class Predictor:
         prediction = self.model.predict(feature_vector)[0]
         return float(prediction)
 
-    def _resolve_feature_columns_uri(self, model_uri: str) -> str:
-        if model_uri.startswith("runs:/"):
-            rest = model_uri.split("runs:/", 1)[1]
-            run_id = rest.split("/", 1)[0]
+    def _resolve_feature_columns_uri(self) -> str:
+        run_id = self.run_id
+        if run_id:
             return f"runs:/{run_id}/feature_columns.json"
-        return f"{model_uri}/feature_columns.json"
+        return f"{self.model_uri}/feature_columns.json"
+
+    def _resolve_pca_uri(self) -> str:
+        run_id = self.run_id
+        if run_id:
+            return f"runs:/{run_id}/preprocessing/embedding_pca.joblib"
+        return str(Path(self.model_uri).parent / "preprocessing" / "embedding_pca.joblib")
+
+    def _load_embedding_reducer(self):
+        pca_uri = self._resolve_pca_uri()
+        try:
+            if pca_uri.startswith(("runs:/", "models:/")):
+                local_path = artifacts.load_artifact(pca_uri)
+            else:
+                local_path = Path(pca_uri)
+                if not local_path.exists():
+                    raise FileNotFoundError(pca_uri)
+        except Exception as exc:  # pylint: disable=broad-except
+            LOGGER.info("No PCA transformer found at %s (%s)", pca_uri, exc)
+            return None
+        payload = joblib.load(str(local_path))
+        if isinstance(payload, dict) and "transformer" in payload:
+            return payload["transformer"]
+        return payload
 
 
 def load_predictor(

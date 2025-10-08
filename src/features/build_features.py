@@ -7,6 +7,8 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 from sentence_transformers import SentenceTransformer
+import joblib
+from sklearn.decomposition import PCA
 
 from src.common.config import load_config
 from src.common.schemas import DatasetSettings, FeatureSettings
@@ -75,17 +77,39 @@ def compute_table_features(
 def build_feature_frame(
     records: list[dict],
     settings: FeatureSettings,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, PCA | None]:
     LOGGER.info("Loading sentence transformer: %s", settings.features.embedding_model)
-    embedder = SentenceTransformer(settings.features.embedding_model)
+    embedder_kwargs: dict[str, object] = {}
+    cache_dir = settings.features.embedding_cache_dir
+    if cache_dir:
+        embedder_kwargs["cache_folder"] = cache_dir
+    embedder = SentenceTransformer(settings.features.embedding_model, **embedder_kwargs)
 
     df = pd.DataFrame(records)
     question_series = df["question"].fillna("")
     questions = question_series.tolist()
     embeddings = embedder.encode(
-        questions, show_progress_bar=False, convert_to_numpy=True
+        questions,
+        show_progress_bar=False,
+        convert_to_numpy=True,
+        batch_size=settings.features.embedding_batch_size,
     )
-    embed_cols = [f"emb_{idx:03d}" for idx in range(embeddings.shape[1])]
+    pca_model: PCA | None = None
+    embedding_dim = settings.features.embedding_dim
+    if embedding_dim and embedding_dim < embeddings.shape[1]:
+        LOGGER.info(
+            "Reducing embedding dimensionality from %s to %s with PCA",
+            embeddings.shape[1],
+            embedding_dim,
+        )
+        pca_model = PCA(
+            n_components=embedding_dim, random_state=settings.training.seed
+        )
+        embeddings = pca_model.fit_transform(embeddings)
+        embed_cols = [f"emb_pca_{idx:03d}" for idx in range(embeddings.shape[1])]
+    else:
+        embed_cols = [f"emb_{idx:03d}" for idx in range(embeddings.shape[1])]
+
     embeddings_df = pd.DataFrame(embeddings, columns=embed_cols)
 
     agg_features = [
@@ -119,7 +143,7 @@ def build_feature_frame(
     feature_frame["target"] = df["ground_truth"].astype(float)
     feature_frame["question_id"] = df["question_id"]
     feature_frame["topic"] = topic_series
-    return feature_frame
+    return feature_frame, pca_model
 
 
 def run_feature_pipeline(
@@ -139,12 +163,24 @@ def run_feature_pipeline(
 
     LOGGER.info("Loading records from %s", raw_path)
     records = load_records(raw_path)
-    feature_frame = build_feature_frame(records, feature_cfg)
+    feature_frame, pca_model = build_feature_frame(records, feature_cfg)
 
     processed_dir = Path(data_cfg.paths.processed)
     processed_dir.mkdir(parents=True, exist_ok=True)
     output_path = processed_dir / "finance_math_features.parquet"
     feature_frame.to_parquet(output_path, index=False)
+
+    pca_path = processed_dir / "embedding_pca.joblib"
+    if pca_model is not None:
+        pca_payload = {
+            "transformer": pca_model,
+            "version": feature_cfg.features.feature_version,
+            "embedding_model": feature_cfg.features.embedding_model,
+        }
+        joblib.dump(pca_payload, pca_path)
+        LOGGER.info("Saved PCA transformer to %s", pca_path)
+    else:
+        pca_path.unlink(missing_ok=True)
 
     LOGGER.info("Saved features to %s", output_path)
     return output_path

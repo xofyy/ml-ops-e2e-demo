@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GroupKFold
 
 from src.common.config import load_config
 from src.common.schemas import DatasetSettings, FeatureSettings
@@ -38,18 +38,52 @@ def load_feature_set(
 
 def split_features(
     feature_frame: pd.DataFrame,
-    val_size: float,
-    seed: int,
+    training_cfg: FeatureSettings.TrainingConfig,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     target = feature_frame.pop("target")
-    feature_frame = feature_frame.drop(
-        columns=["question_id", "topic"], errors="ignore"
-    )
+    groups = None
+    group_column = training_cfg.group_column
+    if group_column and group_column in feature_frame.columns:
+        groups = feature_frame[group_column].copy()
+    elif group_column:
+        LOGGER.warning(
+            "Group column '%s' not present in feature frame; falling back to random split.",
+            group_column,
+        )
+    drop_columns = ["question_id", "topic"]
+    if group_column:
+        drop_columns.append(group_column)
+    feature_frame = feature_frame.drop(columns=drop_columns, errors="ignore")
+
+    if groups is not None:
+        unique_group_count = pd.Series(groups).nunique()
+        if unique_group_count >= training_cfg.n_splits:
+            try:
+                splitter = GroupKFold(n_splits=training_cfg.n_splits)
+                split_iter = splitter.split(feature_frame, target, groups)
+                train_idx, valid_idx = next(split_iter)
+                return (
+                    feature_frame.iloc[train_idx],
+                    feature_frame.iloc[valid_idx],
+                    target.iloc[train_idx],
+                    target.iloc[valid_idx],
+                )
+            except ValueError as err:
+                LOGGER.warning(
+                    "GroupKFold failed (%s); falling back to random split.", err
+                )
+        else:
+            LOGGER.warning(
+                "Insufficient unique groups (%s) for n_splits=%s; using random split.",
+                unique_group_count,
+                training_cfg.n_splits,
+            )
+
     X_train, X_valid, y_train, y_valid = train_test_split(
         feature_frame,
         target,
-        test_size=val_size,
-        random_state=seed,
+        test_size=training_cfg.val_size,
+        random_state=training_cfg.seed,
     )
     return X_train, X_valid, y_train, y_valid
 
@@ -85,8 +119,7 @@ def run_training(
 
     X_train, X_valid, y_train, y_valid = split_features(
         feature_frame.copy(),
-        val_size=feature_cfg.training.val_size,
-        seed=feature_cfg.training.seed,
+        training_cfg=feature_cfg.training,
     )
 
     mlflow.set_tracking_uri(feature_cfg.mlflow.tracking_uri)
@@ -96,12 +129,18 @@ def run_training(
         mlflow.log_params(feature_cfg.training.params)
         mlflow.log_param("val_size", feature_cfg.training.val_size)
         mlflow.log_param("seed", feature_cfg.training.seed)
+        mlflow.log_param("feature_version", feature_cfg.features.feature_version)
         mlflow.log_param("feature_count", X_train.shape[1])
         log_dvc_snapshot()
         mlflow.log_dict(
-            {"feature_columns": list(X_train.columns)},
+            {
+                "feature_columns": list(X_train.columns),
+                "version": feature_cfg.features.feature_version,
+            },
             artifact_file="feature_columns.json",
         )
+
+        _log_preprocessing_artifacts(data_cfg, feature_cfg)
 
         model, metrics = train_lightgbm(
             X_train,
@@ -150,3 +189,18 @@ def _hash_file_if_exists(path_str: str) -> Optional[str]:
     if not path.exists():
         return None
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _log_preprocessing_artifacts(
+    dataset_cfg: DatasetSettings, feature_cfg: FeatureSettings
+) -> None:
+    processed_dir = Path(dataset_cfg.paths.processed)
+    pca_path = processed_dir / "embedding_pca.joblib"
+    if pca_path.exists():
+        mlflow.log_artifact(str(pca_path), artifact_path="preprocessing")
+
+    invalid_path = (
+        Path(dataset_cfg.paths.raw) / dataset_cfg.ingest.invalid_output_filename
+    )
+    if invalid_path.exists():
+        mlflow.log_artifact(str(invalid_path), artifact_path="data_quality")

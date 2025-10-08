@@ -20,6 +20,9 @@ class DatasetSettings(BaseModel):
     class IngestConfig(BaseModel):
         output_filename: str = Field(default="finance_math_validation.jsonl")
         max_examples: int | None = Field(default=None, ge=1)
+        invalid_output_filename: str = Field(
+            default="finance_math_invalid.jsonl"
+        )
 
     dataset: DatasetConfig
     paths: PathsConfig
@@ -36,11 +39,17 @@ class FeatureSettings(BaseModel):
         numeric_aggregations: list[Literal["mean", "std", "max", "min", "sum"]] = Field(
             default_factory=lambda: ["mean", "std", "max", "min", "sum"]
         )
+        embedding_cache_dir: str | None = None
+        embedding_batch_size: int = Field(default=32, ge=1)
+        embedding_dim: int | None = Field(default=None, gt=0)
+        feature_version: str = "v1"
 
     class TrainingConfig(BaseModel):
         val_size: float = Field(default=0.2, gt=0, lt=1)
         seed: int = 42
         params: dict[str, float | int | bool | str]
+        n_splits: int = Field(default=5, ge=2)
+        group_column: str | None = "question_id"
 
     class MlflowConfig(BaseModel):
         experiment_name: str
