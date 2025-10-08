@@ -1,15 +1,15 @@
 # FinanceMath MLOps Demo
 
-FinanceMath MLOps Demo is a lightweight, end-to-end pipeline that ingests the [FinanceMath](https://huggingface.co/datasets/yale-nlp/FinanceMath) dataset, engineers features, trains a regression model, evaluates it, and exposes an inference service. The repository demonstrates reproducible workflows, orchestration, CI/CD, and monitoring practices in an approachable learning setting.
+FinanceMath MLOps Demo is a lightweight, end-to-end pipeline that ingests the [FinanceMath](https://huggingface.co/datasets/yale-nlp/FinanceMath) dataset, engineers features, trains a regression model, evaluates it, and exposes an inference service. The repository highlights reproducible experimentation, orchestration, CI/CD, and monitoring practices.
 
 ## Features
 - **Ingestion**: Download the Hugging Face validation split, normalise markdown tables, validate each record with Pydantic, and persist JSONL artefacts.
-- **Feature engineering**: Blend sentence embeddings with numeric table aggregates and metadata features.
-- **Training & tracking**: Fit a LightGBM regressor and capture metrics/artefacts via MLflow.
-- **Evaluation**: Reuse the feature set to compute MAE/RMSE and store JSON reports.
-- **Serving**: Provide a FastAPI service that loads the latest MLflow model and exposes Prometheus-compatible metrics.
-- **Orchestration**: Prefect flow stitches ingestion → features → training → evaluation.
-- **Monitoring**: Evidently script scaffold for drift/performance dashboards.
+- **Feature engineering**: Combine sentence embeddings with numeric table aggregates and metadata features.
+- **Training & tracking**: Fit a LightGBM regressor and capture metrics / artefacts via MLflow.
+- **Evaluation**: Reuse the feature set to compute MAE / RMSE and store JSON reports.
+- **Serving**: FastAPI service loads the latest MLflow model and exposes Prometheus-compatible metrics.
+- **Orchestration**: Prefect flow stitches ingestion -> features -> training -> evaluation.
+- **Monitoring**: Evidently script scaffold for drift / performance dashboards.
 
 ## Quick Start
 ```bash
@@ -24,7 +24,7 @@ huggingface-cli login  # or export HUGGINGFACE_TOKEN=<your-token>
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
-# Update `configs/inference.yaml` to point to your trained model,
+# Update configs/inference.yaml to point to your trained model,
 #   e.g. set model.model_uri: "runs:/<run_id>/model" or register the model.
 
 # Run the pipeline end to end
@@ -60,6 +60,7 @@ make serve
 | `make lint` / `make lint-fix` | Static analysis with Ruff & Black. |
 | `make test` | Run unit tests. |
 | `make drift-report MODEL_URI=runs:/<run_id>/model` | Generate Evidently HTML drift report (computes predictions via MLflow). |
+| `make compose-up` / `make compose-down` | Bring up or tear down the Docker Compose stack (inference + Prometheus + Grafana). |
 | `SKIP_MODEL_LOAD=1 pytest` | Skip model loading during tests (FastAPI metrics tests). |
 
 ## Repository Layout
@@ -67,7 +68,7 @@ make serve
 .
 ├── configs/              # YAML configs for data, training, inference.
 ├── data/                 # Data artefacts (tracked via DVC).
-├── docker/               # Dockerfiles and compose stack for serving/monitoring.
+├── docker/               # Dockerfiles and compose stack for serving / monitoring.
 ├── docs/                 # Architecture notes and notebooks.
 ├── scripts/              # Utility scripts (e.g. Evidently report).
 ├── src/
@@ -81,8 +82,8 @@ make serve
 ```
 
 ## Data Validation & Versioning
-- İndirme adımı, her kaydı `src/data/validators.py` altındaki Pydantic şemasıyla doğrular; hatalı kayıtlar log’a yazılıp atlanır.
-- DVC ile veri versiyonlamak için:
+- Ingestion validates each record against `src/data/validators.py`; invalid rows are logged and skipped.
+- Track data snapshots with DVC:
   ```bash
   dvc init
   dvc remote add -d storage gs://<bucket>/finance-math
@@ -90,22 +91,23 @@ make serve
   git add data/raw.dvc data/processed.dvc .dvc/config
   dvc push
   ```
-  Böylece MLflow run’larında `.dvc` hash’lerini loglayarak veri-model izlenebilirliği sağlarsın; başka bir makinede `dvc pull` ile aynı veriyi indirirsin.
+  Log `.dvc` hashes or `dvc status -c` output to MLflow runs for data-model traceability. Other machines can run `dvc pull` to restore the same snapshot.
 
 ## Docker Compose
-Yerelde inference servisini ve Prometheus metrik toplamayı birlikte çalıştırmak için:
+Run the inference service together with Prometheus and Grafana:
 ```bash
 cd docker
 docker compose up --build
 ```
-- Inference servisi `http://localhost:8000` adresinde, Prometheus metrikleri `/metrics` altında erişilebilir.
-- Prometheus arayüzü `http://localhost:9090`, Grafana ise `http://localhost:3000` (varsayılan kullanıcı/parola `admin`/`admin`). Grafana’daki “FinanceMath Inference Overview” dashboard’u request sayısı, latency (p95) ve prediction sayısını gösterir.
+- Inference: `http://localhost:8000` (metrics at `/metrics`).
+- Prometheus: `http://localhost:9090`.
+- Grafana: `http://localhost:3000` (default credentials `admin` / `admin`), with the “FinanceMath Inference Overview” dashboard showing request counts, latency (p95), and prediction totals.
 
 ## CI/CD
-The GitHub Actions workflow (`.github/workflows/mlops-demo.yml`) installs dependencies with pip, runs lint checks, executes pytest (model yüklemeden), ve Docker imajının inşasını doğrular. Gerekirse ek job’larla drift raporu, Prefect deployment tetikleme veya image push işlemlerini ekleyebilirsin.
+The GitHub Actions workflow (`.github/workflows/mlops-demo.yml`) installs dependencies, runs linting, executes pytest with model loading disabled, and builds the inference Docker image. Extend it with additional jobs (e.g. drift reporting, Prefect deployment triggers, Docker push) as needed.
 
 ## Next Steps
-- Prefect deployment’larını schedule edip GitHub Actions üzerinden tetiklemek.
-- MLflow tracking URI’sini uzak bir backend (PostgreSQL, Databricks vb.) ile paylaşmak.
-- Modeli geliştirmek için hiperparametre araması veya farklı algoritmalar denemek.
-- Prometheus metriğini Grafana veya Alertmanager ile entegre edip uyarı sistemi kurmak.
+- Schedule Prefect deployments or trigger them from GitHub Actions.
+- Point MLflow tracking to a shared backend (PostgreSQL, Databricks, etc.).
+- Improve model performance via hyperparameter search or alternative algorithms.
+- Integrate Prometheus metrics with Grafana alerts or third-party monitoring solutions.

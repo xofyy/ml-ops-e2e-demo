@@ -1,4 +1,4 @@
-.PHONY: install data features train evaluate serve prefect-flow lint lint-fix test drift-report
+.PHONY: install data features train evaluate serve prefect-flow lint lint-fix test drift-report compose-up compose-down
 
 install:
 	pip install -r requirements.txt
@@ -42,3 +42,9 @@ ifdef MODEL_URI
 else
 	python scripts/generate_drift_report.py
 endif
+
+compose-up:
+	cd docker && docker compose up --build
+
+compose-down:
+	cd docker && docker compose down
