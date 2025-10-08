@@ -1,0 +1,52 @@
+name: prefect-run
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_config_path:
+        description: Path to dataset config
+        default: "configs/dataset.yaml"
+        required: false
+      model_config_path:
+        description: Path to model config
+        default: "configs/model.yaml"
+        required: false
+
+jobs:
+  run-prefect-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Prefect
+        run: |
+          python -m pip install --upgrade pip
+          pip install "prefect==2.14.20"
+
+      - name: Prefect cloud login
+        env:
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+          PREFECT_WORKSPACE: ${{ secrets.PREFECT_WORKSPACE }}
+        run: |
+          if [ -z "$PREFECT_API_KEY" ] || [ -z "$PREFECT_WORKSPACE" ]; then
+            echo "PREFECT_API_KEY and PREFECT_WORKSPACE secrets must be set."
+            exit 1
+          fi
+          prefect cloud login -k "$PREFECT_API_KEY" -w "$PREFECT_WORKSPACE"
+
+      - name: Trigger deployment run
+        env:
+          DATA_CONFIG: ${{ github.event.inputs.data_config_path }}
+          MODEL_CONFIG: ${{ github.event.inputs.model_config_path }}
+        run: |
+          DATA_PATH=${DATA_CONFIG:-configs/dataset.yaml}
+          MODEL_PATH=${MODEL_CONFIG:-configs/model.yaml}
+          prefect deployment run "finance-math-mlops/finance-math-demo" \
+            --param data_config_path="$DATA_PATH" \
+            --param model_config_path="$MODEL_PATH"
